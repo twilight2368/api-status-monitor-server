@@ -1,0 +1,33 @@
+[
+  {
+    "name": "Nguyễn Văn Điệp",
+    "url": "https://hust.bkademy.vn/",
+    "method": "GET",
+    "data": {},
+    "cookies": {},
+    "timeout": 5,
+    "schedule_time": "04:00",
+    "cron": "0 4 * * *"
+  },
+  {
+    "name": "test",
+    "url": "https://lamdk.bkademy.vn/api/admission/register-phase/",
+    "method": "POST",
+    "data": {
+      "admissionYear": 2025,
+      "enrollmentDate": 1750265940000,
+      "fromDate": 1750186920000,
+      "name": "Nguyễn Văn Điệp",
+      "needConfirmation": true,
+      "toDate": 1750265940000
+    },
+    "cookies": {
+      "cf_clearance": "c.UYNQJq4WCwrnDgeadesXtjz8_qYeTel8n2yQmDMq8-1747711746-1.2.1.1-MqNXqvfKi_.soxnZNUsMFg8u8cvBdmjYO.pHxNM3gEFH2qA1qKL5sPUndfww85UFzou0IxwCvnoYxxB_gJen90FtYJLVZpbrcEWPkoTXFSiQmviGvB8r3kCdagXC7sorvjsZxIcr.HWsGgr016.A1ClkPNVr9y9rvpFiOSDHQ7BQGz2YV1Ask38DNuKFa_6Hhd9hBMxjUoYX8yZtXgdKKbmAGKIdFhY231GQlBkdksPjtB8ErNKud4qxPZ5cLzPdHuCXrbRXPTThifefwvWVJ_w5caKNsd3a0YdFmZ889Cw1RLjyXbyHy_GOREofARPfZ5I5KhIG_nRtxR1FiP6bKzwI6Cc_Gllalm.Jh.u8cyI",
+      "access-token-admission": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjoiVTJGc2RHVmtYMTgrQU9pMHJRV3FZMzVoWVVFYjY3dldRcTd3UkUvSDNnYnRJM3VQUGgvbGtDR3MxNEZqVm1vcUN4a1l3MjkxQjhnbmE3aC9uTjNFT3ZaS25QZXZuQis5Z1ovWGJSSXVacXJjWFljZm92MkRadHdnRGl5MnJyWkNkQjRnZFgwdjRiKzBNN2xYM0VZQ0NOZy9UbWQ2ZGkzWlptQ2lXbVdKMHBNPSIsImlhdCI6MTc1MDIzOTgwMCwiZXhwIjoxNzUwMjQwNzAwfQ.Js9v2uCxNNx0k6N9lxa97EQV0774-6OT_ACghanyTOo",
+      "refresh-token-admission": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjoiVTJGc2RHVmtYMTlVTk04b3hmaVBEa0tIdURpRFpmclhXcWtHUzJsQTFQS3lSMUNYNU1pazFNSGQ4TGZJN3VyeUM3WU9MbzhCTGdXT0RQdEkzV2JweGowSFdxeU5LaDgzdmhUT2MxQS9BdGFTeFJiVEFrbit1QWQ4THk5U2h3SGh0emVDTngyNEt6NEZMdmF3UXJsVWc1eDN5aXFQQ3BudGl0T0dDY3B4dGE4PSIsImlhdCI6MTc1MDIzOTgwMCwiZXhwIjoxNzUwODQ0NjAwfQ.4f-qhsyRhaIAnSrfnZ9qzsQWhVJriLUcVVCJjXPW1hg"
+    },
+    "timeout": 5,
+    "schedule_time": "04:13",
+    "cron": "13 4 * * *"
+  }
+]
