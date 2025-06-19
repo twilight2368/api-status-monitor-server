@@ -1,48 +1,20 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
+from models import db, Service, StatusService, ServiceStatus, HttpMethod
 from sqlalchemy import Enum as PgEnum
+from cron_helper import check_service_job, add_cron_job, scheduler
 from datetime import datetime
+from flask_cors import CORS
 import enum
 import json
 import requests
 
 app = Flask(__name__)
+CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/test?charset=utf8mb4'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
-
-# ENUM cho phương thức HTTP
-class HttpMethod(enum.Enum):
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    DELETE = "DELETE"
-
-# ENUM cho status dịch vụ
-class ServiceStatus(enum.Enum):
-    UP = "UP"
-    DOWN = "DOWN"
-
-# Bảng Service
-class Service(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False)
-    url = db.Column(db.Text, nullable=False)
-    method = db.Column(PgEnum(HttpMethod), nullable=False)
-    data = db.Column(db.JSON, nullable=True)
-    cookie = db.Column(db.JSON, nullable=True)
-    cron = db.Column(db.String(20), nullable=True)
-
-# Bảng StatusService (lưu kết quả kiểm tra)
-class StatusService(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    id_service = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=False, unique=True)
-    name = db.Column(db.String(255), nullable=False)
-    status = db.Column(PgEnum(ServiceStatus), nullable=False)
-    finish_time = db.Column(db.DateTime, nullable=False)
-
-    service = db.relationship('Service', backref=db.backref('statuses', lazy=True))
+db.init_app(app)
 
 @app.route("/")
 def index():
@@ -62,7 +34,6 @@ def get_services():
             "data": s.data,
             "cookies": s.cookie,
             "timeout": 5,
-            "schedule_time": None,
             "cron": s.cron
         })
     return jsonify(result)
@@ -101,78 +72,33 @@ def update_service(service_id):
 @app.route("/api/services/<int:service_id>", methods=["DELETE"])
 def delete_service(service_id):
     service = Service.query.get_or_404(service_id)
+    # Xoá status trước (nếu có)
+    status = StatusService.query.filter_by(id_service=service.id).first()
+    if status:
+        db.session.delete(status)
     db.session.delete(service)
     db.session.commit()
     return jsonify({"message": f"Đã xoá dịch vụ '{service.name}'"})
 
-# API: Kiểm tra dịch vụ và lưu trạng thái
 @app.route("/api/services/<int:service_id>/check", methods=["GET"])
 def check_service(service_id):
     service = Service.query.get_or_404(service_id)
-    try:
-        start = datetime.now()
-        if service.method == HttpMethod.POST:
-            response = requests.post(
-                service.url,
-                json=service.data or {},
-                cookies=service.cookie or {},
-                timeout=5
-            )
-        else:
-            response = requests.get(
-                service.url,
-                cookies=service.cookie or {},
-                timeout=5
-            )
 
-        status = ServiceStatus.UP if response.status_code == 200 else ServiceStatus.DOWN
-        finish_time = datetime.now()
+    # Gọi logic kiểm tra thực tế và cập nhật DB
+    result = check_service_job(service.id, app)
 
-        # Cập nhật hoặc tạo mới trạng thái kiểm tra
-        status_entry = StatusService.query.filter_by(id_service=service.id).first()
-        if status_entry:
-            status_entry.status = status
-            status_entry.finish_time = finish_time
-        else:
-            status_entry = StatusService(
-                id_service=service.id,
-                name=service.name,
-                status=status,
-                finish_time=finish_time
-            )
-            db.session.add(status_entry)
+    # Nếu service có cron thì thêm vào scheduler (chạy định kỳ)
+    if service.cron:
+        add_cron_job(service, app)
 
-        db.session.commit()
-
-        return jsonify({
-            "status": status.value,
-            "status_code": response.status_code,
-            "response_time": (finish_time - start).total_seconds() * 1000,
-            "error": None if status == ServiceStatus.UP else f"HTTP {response.status_code}"
-        })
-    except Exception as e:
-        finish_time = datetime.now()
-        status_entry = StatusService.query.filter_by(id_service=service.id).first()
-        if status_entry:
-            status_entry.status = ServiceStatus.DOWN
-            status_entry.finish_time = finish_time
-        else:
-            status_entry = StatusService(
-                id_service=service.id,
-                name=service.name,
-                status=ServiceStatus.DOWN,
-                finish_time=finish_time
-            )
-            db.session.add(status_entry)
-
-        db.session.commit()
-
-        return jsonify({
-            "status": "DOWN",
-            "error": str(e)
-        })
+    return jsonify(result)
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
+        scheduler.start()
+        # Khởi tạo job cho các service đã có cron
+        for service in Service.query.all():
+            if service.cron:
+                add_cron_job(service, app)
     app.run(debug=True)

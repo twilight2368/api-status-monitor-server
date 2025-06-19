@@ -21,8 +21,7 @@
       <option value="GET">GET</option>
       <option value="POST">POST</option>
     </select>
-    <label for="schedule_time">Thời gian chạy (hh:mm):</label>
-    <input type="time" id="schedule_time" name="schedule_time">
+    <input type="text" id="schedule_time" name="schedule_time">
     <textarea name="data" placeholder="POST data (JSON)"></textarea>
     <textarea name="cookies" placeholder="Cookies (JSON)"></textarea>
     <input type="number" name="timeout" placeholder="Timeout (giây)" value="5" />
@@ -113,14 +112,6 @@
       fetchServices();
     }
 
-    function cronToTime(cron) {
-      if (!cron) return "";
-      const parts = cron.split(" ");
-      if (parts.length < 2) return "";
-      const minute = parts[0].padStart(2, "0");
-      const hour = parts[1].padStart(2, "0");
-      return `${hour}:${minute}`;
-    }
 
     function editService(id) {
       const s = services.find((x) => x.id === id);
@@ -131,7 +122,7 @@
       form.method.value = s.method;
       form.data.value = JSON.stringify(s.data || {}, null, 2);
       form.cookies.value = JSON.stringify(s.cookies || {}, null, 2);
-      form.schedule_time.value = cronToTime(s.cron);
+      form.schedule_time.value = s.cron
       form.timeout.value = 5;
 
       editId = s.id;
@@ -142,6 +133,7 @@
       const result = await res.json();
 
       alert(
+        `Tên dịch vụ: ${result.name}\n` +
         `Trạng thái: ${result.status}\n` +
         `Mã: ${result.status_code || "N/A"}\n` +
         `Phản hồi: ${result.response_time || "?"}ms\n` +
