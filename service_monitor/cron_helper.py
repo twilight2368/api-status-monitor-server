@@ -39,6 +39,7 @@ def check_service_job(service_id, app):
 
             if 400 <= response.status_code < 600:
                 status = ServiceStatus.DOWN
+                send_discord_alert(service.name, service.url, f"HTTP {response.status_code} - {response.text}")
             else:
                 status = ServiceStatus.UP
             finish_time = datetime.now()
