@@ -37,7 +37,10 @@ def check_service_job(service_id, app):
                     timeout=5
                 )
 
-            status = ServiceStatus.UP if response.status_code == 200 else ServiceStatus.DOWN
+            if 400 <= response.status_code < 600:
+                status = ServiceStatus.DOWN
+            else:
+                status = ServiceStatus.UP
             finish_time = datetime.now()
 
             status_entry = StatusService.query.filter_by(id_service=service.id).first()

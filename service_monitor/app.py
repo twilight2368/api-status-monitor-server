@@ -93,6 +93,21 @@ def check_service(service_id):
 
     return jsonify(result)
 
+# API: Lấy status hiện tại của dịch vụ
+@app.route("/api/services/<int:service_id>/status", methods=["GET"])
+def get_service_status(service_id):
+    status = StatusService.query.filter_by(id_service=service_id).first()
+    if not status:
+        return jsonify({"message": "Không có dữ liệu status"}), 404
+
+    return jsonify({
+        "id_service": status.id_service,
+        "name": status.name,
+        "status": status.status.value,
+        "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
