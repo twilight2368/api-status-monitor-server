@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+import os
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from models import db, Service, StatusService, ServiceStatus, HttpMethod
@@ -11,7 +13,12 @@ import requests
 
 app = Flask(__name__)
 CORS(app)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/test?charset=utf8mb4'
+
+load_dotenv()
+
+SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@localhost/{os.getenv('DB_NAME')}?charset=utf8mb4"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
@@ -21,6 +28,7 @@ def index():
     return render_template("index.html")
 
 # API: Lấy danh sách dịch vụ
+
 @app.route("/api/services", methods=["GET"])
 def get_services():
     services = Service.query.all()
@@ -39,6 +47,7 @@ def get_services():
     return jsonify(result)
 
 # API: Thêm dịch vụ
+
 @app.route("/api/services", methods=["POST"])
 def add_service():
     data = request.json
@@ -55,6 +64,8 @@ def add_service():
     return jsonify({"message": "Dịch vụ đã được thêm"}), 201
 
 # API: Cập nhật dịch vụ
+
+
 @app.route("/api/services/<int:service_id>", methods=["PUT"])
 def update_service(service_id):
     service = Service.query.get_or_404(service_id)
@@ -69,6 +80,8 @@ def update_service(service_id):
     return jsonify({"message": "Cập nhật thành công"})
 
 # API: Xoá dịch vụ
+
+
 @app.route("/api/services/<int:service_id>", methods=["DELETE"])
 def delete_service(service_id):
     service = Service.query.get_or_404(service_id)
@@ -79,6 +92,7 @@ def delete_service(service_id):
     db.session.delete(service)
     db.session.commit()
     return jsonify({"message": f"Đã xoá dịch vụ '{service.name}'"})
+
 
 @app.route("/api/services/<int:service_id>/check", methods=["GET"])
 def check_service(service_id):
@@ -94,6 +108,8 @@ def check_service(service_id):
     return jsonify(result)
 
 # API: Lấy status hiện tại của dịch vụ
+
+
 @app.route("/api/services/<int:service_id>/status", methods=["GET"])
 def get_service_status(service_id):
     status = StatusService.query.filter_by(id_service=service_id).first()
