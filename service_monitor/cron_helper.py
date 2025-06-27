@@ -3,10 +3,11 @@ from apscheduler.triggers.cron import CronTrigger
 from flask import current_app
 from datetime import datetime
 import requests
+import os
 from models import db, Service, StatusService, ServiceStatus, HttpMethod
 
 scheduler = BackgroundScheduler()
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1383989758090416231/RFc50m6BwVVaqCz9pHRmLNBVG8lTJja0rkXsKuCr0IYANjRSQ-kHIKuqpDzjnx8K0ZUz"
+DISCORD_WEBHOOK_URL = f"{os.getenv('DISCORD_WEBHOOK')}"
 
 def send_discord_alert(service_name, service_url, error_msg):
     content = f"❗ Dịch vụ **{service_name}** đang **DOWN**.\n🔗 URL: {service_url}\n📛 Lỗi: `{error_msg}`"
@@ -44,18 +45,13 @@ def check_service_job(service_id, app):
                 status = ServiceStatus.UP
             finish_time = datetime.now()
 
-            status_entry = StatusService.query.filter_by(id_service=service.id).first()
-            if status_entry:
-                status_entry.status = status
-                status_entry.finish_time = finish_time
-            else:
-                status_entry = StatusService(
-                    id_service=service.id,
-                    name=service.name,
-                    status=status,
-                    finish_time=finish_time
-                )
-                db.session.add(status_entry)
+            status_entry = StatusService(
+                id_service=service.id,
+                name=service.name,
+                status=status,
+                finish_time=finish_time
+            )
+            db.session.add(status_entry)
 
             db.session.commit()
 
@@ -68,18 +64,14 @@ def check_service_job(service_id, app):
             }
         except Exception as e:
             finish_time = datetime.now()
-            status_entry = StatusService.query.filter_by(id_service=service.id).first()
-            if status_entry:
-                status_entry.status = ServiceStatus.DOWN
-                status_entry.finish_time = finish_time
-            else:
-                status_entry = StatusService(
-                    id_service=service.id,
-                    name=service.name,
-                    status=ServiceStatus.DOWN,
-                    finish_time=finish_time
-                )
-                db.session.add(status_entry)
+            
+            status_entry = StatusService(
+                id_service=service.id,
+                name=service.name,
+                status=ServiceStatus.DOWN,
+                finish_time=finish_time
+            )
+            db.session.add(status_entry)
 
             db.session.commit()
             send_discord_alert(service.name, service.url, str(e))

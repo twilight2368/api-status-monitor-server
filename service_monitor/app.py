@@ -61,22 +61,38 @@ def add_service():
     )
     db.session.add(new_service)
     db.session.commit()
+    # # Gọi luôn cronjob sau khi thêm nếu có cron
+    if new_service.cron:
+        add_cron_job(new_service, app)
+
     return jsonify({"message": "Dịch vụ đã được thêm"}), 201
 
 # API: Cập nhật dịch vụ
-
 
 @app.route("/api/services/<int:service_id>", methods=["PUT"])
 def update_service(service_id):
     service = Service.query.get_or_404(service_id)
     data = request.json
+
     service.name = data["name"]
     service.url = data["url"]
     service.method = HttpMethod[data["method"].upper()]
     service.data = data.get("data", {})
     service.cookie = data.get("cookies", {})
     service.cron = data.get("schedule_time")
+
     db.session.commit()
+
+    # Xoá cronjob cũ nếu tồn tại
+    job_id = f"service_{service.id}"
+    existing_job = scheduler.get_job(job_id)
+    if existing_job:
+        scheduler.remove_job(job_id)
+
+    # Thêm lại cronjob mới nếu có cron
+    if service.cron:
+        add_cron_job(service, app)
+
     return jsonify({"message": "Cập nhật thành công"})
 
 # API: Xoá dịch vụ
@@ -101,9 +117,9 @@ def check_service(service_id):
     # Gọi logic kiểm tra thực tế và cập nhật DB
     result = check_service_job(service.id, app)
 
-    # Nếu service có cron thì thêm vào scheduler (chạy định kỳ)
-    if service.cron:
-        add_cron_job(service, app)
+    # # Nếu service có cron thì thêm vào scheduler (chạy định kỳ)
+    # if service.cron:
+    #     add_cron_job(service, app)
 
     return jsonify(result)
 

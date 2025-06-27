@@ -27,13 +27,22 @@ class Service(db.Model):
     data = db.Column(db.JSON, nullable=True)
     cookie = db.Column(db.JSON, nullable=True)
     cron = db.Column(db.String(20), nullable=True)
+    # Quan hệ đến StatusService
+    statuses = db.relationship(
+        'StatusService',
+        backref='service',
+        cascade='all, delete-orphan',
+        passive_deletes=True  # Cho phép ON DELETE CASCADE hoạt động
+    )
 
 # Bảng StatusService (lưu kết quả kiểm tra)
 class StatusService(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    id_service = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=False, unique=True)
+    id_service = db.Column(
+        db.Integer,
+        db.ForeignKey('service.id', ondelete='CASCADE'),
+        nullable=False
+    )
     name = db.Column(db.String(255), nullable=False)
     status = db.Column(PgEnum(ServiceStatus), nullable=False)
     finish_time = db.Column(db.DateTime, nullable=False)
-
-    service = db.relationship('Service', backref=db.backref('statuses', lazy=True))
