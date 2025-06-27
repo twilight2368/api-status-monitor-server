@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from models import db, Service, StatusService, ServiceStatus, HttpMethod
 from sqlalchemy import Enum as PgEnum
@@ -11,23 +11,40 @@ import enum
 import json
 import requests
 
-app = Flask(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIST_DIR = os.path.join(BASE_DIR, "dist")
+
+app = Flask(__name__, static_folder=DIST_DIR, static_url_path='')
 CORS(app)
 
 load_dotenv()
 
-SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@localhost/{os.getenv('DB_NAME')}?charset=utf8mb4"
+SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@db/{os.getenv('DB_NAME')}?charset=utf8mb4"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
+
 @app.route("/")
-def index():
-    return render_template("index.html")
+def serve_index():
+    return send_from_directory(app.static_folder, "index.html")
+
+# Serve the main index.html for the root path
+
+
+@app.route("/<path:path>")
+def static_proxy(path):
+    file_path = os.path.join(app.static_folder, path)
+    if os.path.exists(file_path):
+        return send_from_directory(app.static_folder, path)
+    # fallback to index.html for client-side routing
+    return send_from_directory(app.static_folder, "index.html")
 
 # API: Lấy danh sách dịch vụ
+
 
 @app.route("/api/services", methods=["GET"])
 def get_services():
@@ -47,6 +64,7 @@ def get_services():
     return jsonify(result)
 
 # API: Thêm dịch vụ
+
 
 @app.route("/api/services", methods=["POST"])
 def add_service():
@@ -68,6 +86,7 @@ def add_service():
     return jsonify({"message": "Dịch vụ đã được thêm"}), 201
 
 # API: Cập nhật dịch vụ
+
 
 @app.route("/api/services/<int:service_id>", methods=["PUT"])
 def update_service(service_id):
@@ -101,12 +120,20 @@ def update_service(service_id):
 @app.route("/api/services/<int:service_id>", methods=["DELETE"])
 def delete_service(service_id):
     service = Service.query.get_or_404(service_id)
+
+    job_id = f"service_{service.id}"
+    existing_job = scheduler.get_job(job_id)
+    if existing_job:
+        scheduler.remove_job(job_id)
+
     # Xoá status trước (nếu có)
     status = StatusService.query.filter_by(id_service=service.id).first()
     if status:
         db.session.delete(status)
+
     db.session.delete(service)
     db.session.commit()
+
     return jsonify({"message": f"Đã xoá dịch vụ '{service.name}'"})
 
 
