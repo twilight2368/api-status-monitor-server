@@ -7,18 +7,25 @@ import enum
 db = SQLAlchemy()
 
 # ENUM cho phương thức HTTP
+
+
 class HttpMethod(enum.Enum):
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
+    PATCH = "PATCH"
 
 # ENUM cho trạng thái dịch vụ
+
+
 class ServiceStatus(enum.Enum):
     UP = "UP"
     DOWN = "DOWN"
 
 # Bảng Service
+
+
 class Service(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
@@ -36,6 +43,8 @@ class Service(db.Model):
     )
 
 # Bảng StatusService (lưu kết quả kiểm tra)
+
+
 class StatusService(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     id_service = db.Column(
@@ -46,3 +55,5 @@ class StatusService(db.Model):
     name = db.Column(db.String(255), nullable=False)
     status = db.Column(PgEnum(ServiceStatus), nullable=False)
     finish_time = db.Column(db.DateTime, nullable=False)
+
+

@@ -1,28 +1,45 @@
-version: "3.9"
-
 services:
-  service_monitor:
-    build: .
-    container_name: service_monitor
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-    restart: unless-stopped
-
   db:
     image: mysql:latest
-    container_name: mysql_db
-    restart: unless-stopped
+    container_name: flask_mysql
+    env_file:
+      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: your_root_password
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3307:3306"
     volumes:
-      - ../mysql_db:/var/lib/mysql
-      - ./mysql-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql_data:/var/lib/mysql
+    networks:
+      - flask_network
+
+  flask_app:
+    build: .
+    container_name: flask_app
+    env_file:
+      - .env
+    environment:
+      FLASK_APP: app.py
+      FLASK_RUN_HOST: 0.0.0.0
+      FLASK_RUN_PORT: 5000
+      FLASK_ENV: development
+      DB_USER: root
+      DB_PASSWORD: your_root_password
+      DB_NAME: ${DB_NAME}
+      DB_HOST: db
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    networks:
+      - flask_network
+
+volumes:
+  mysql_data:
+
+networks:
+  flask_network:
+    driver: bridge

@@ -4,12 +4,14 @@ from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from models import db, Service, StatusService, ServiceStatus, HttpMethod
 from sqlalchemy import Enum as PgEnum
+from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
 from datetime import datetime
 from flask_cors import CORS
 import enum
 import json
 import requests
+import time
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +22,10 @@ CORS(app)
 
 load_dotenv()
 
-SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@db/{os.getenv('DB_NAME')}?charset=utf8mb4"
+SQLALCHEMY_DATABASE_URI = (
+    f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+    f"@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4"
+)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -167,12 +172,36 @@ def get_service_status(service_id):
     })
 
 
+def wait_for_db():
+    """Wait for database to be ready"""
+    max_retries = 30
+    for i in range(max_retries):
+        print("Checking db ready ....")
+        try:
+            db.session.execute(text('SELECT 1'))
+            print("Database connected successfully!")
+            return True
+        except Exception as e:
+            print(f"Database not ready (attempt {i+1}/{max_retries}): {e}")
+            time.sleep(2)
+    return False
+
+
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        scheduler.start()
-        # Khởi tạo job cho các service đã có cron
-        for service in Service.query.all():
-            if service.cron:
-                add_cron_job(service, app)
-    app.run(debug=True)
+        if wait_for_db():
+            print("Creating tables...")
+            db.create_all()
+            print("Tables created.")
+            scheduler.start()
+            # Khởi tạo job cho các service đã có cron
+            for service in Service.query.all():
+                if service.cron:
+                    add_cron_job(service, app)
+            app.run(
+                host=os.getenv("FLASK_RUN_HOST", "localhost"),
+                port=int(os.getenv("FLASK_RUN_PORT", 5000)),
+                debug=True
+            )
+        else:
+            print("Failed to connect to database after 30 attempts")

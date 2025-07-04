@@ -1,4 +1,7 @@
-/__pycache__
-.env
 .venv
-dist
+__pycache__
+*.pyc
+.git
+.gitignore
+README.md
+.env
