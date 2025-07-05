@@ -84,9 +84,11 @@ def add_service():
     )
     db.session.add(new_service)
     db.session.commit()
-    # # Gọi luôn cronjob sau khi thêm nếu có cron
+    # Gọi luôn cronjob sau khi thêm nếu có cron
     if new_service.cron:
         add_cron_job(new_service, app)
+
+    check_service_job(new_service.id, app=app)
 
     return jsonify({"message": "Dịch vụ đã được thêm"}), 201
 
@@ -170,6 +172,30 @@ def get_service_status(service_id):
         "status": status.status.value,
         "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S")
     })
+
+
+@app.route("/api/services/<int:service_id>/statuses", methods=["GET"])
+def get_service_statuses(service_id):
+    statuses = (
+        StatusService.query
+        .filter_by(id_service=service_id)
+        # Adjust to your timestamp field
+        .order_by(StatusService.finish_time.asc())
+        .limit(50)
+        .all()
+    )
+
+    if not statuses:
+        return jsonify({"message": "Không có dữ liệu status"}), 404
+
+    return jsonify([
+        {
+            "id_service": status.id_service,
+            "name": status.name,
+            "status": status.status.value,
+            "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S")
+        } for status in statuses
+    ])
 
 
 def wait_for_db():
