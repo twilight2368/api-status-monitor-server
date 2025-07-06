@@ -180,7 +180,7 @@ def get_service_statuses(service_id):
         StatusService.query
         .filter_by(id_service=service_id)
         # Adjust to your timestamp field
-        .order_by(StatusService.finish_time.asc())
+        .order_by(StatusService.finish_time.desc())
         .limit(50)
         .all()
     )
