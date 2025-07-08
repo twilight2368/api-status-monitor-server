@@ -179,8 +179,7 @@ def get_service_statuses(service_id):
     statuses = (
         StatusService.query
         .filter_by(id_service=service_id)
-        # Adjust to your timestamp field
-        .order_by(StatusService.finish_time.desc())
+        .order_by(StatusService.finish_time.desc())  # Get latest first
         .limit(50)
         .all()
     )
@@ -188,8 +187,12 @@ def get_service_statuses(service_id):
     if not statuses:
         return jsonify({"message": "Không có dữ liệu status"}), 404
 
+    # Reverse to make finish_time ascending (oldest → newest)
+    statuses = list(reversed(statuses))
+
     return jsonify([
         {
+            "id": status.id,
             "id_service": status.id_service,
             "name": status.name,
             "status": status.status.value,
