@@ -290,25 +290,34 @@ def create_user(username="admin", password="password"):
         print(f"User '{username}' created successfully.")
 
 
-if __name__ == "__main__":
+def init_app():
     with app.app_context():
         if wait_for_db():
             print("Creating tables...")
             db.create_all()
             print("Tables created.")
+
             scheduler.start()
 
-            create_user(username=os.getenv("MONITOR_APP_USER", "admin"),
-                        password=os.getenv("MONITOR_APP_USER_PASSWORD", "password"))
+            create_user(
+                username=os.getenv("MONITOR_APP_USER", "admin"),
+                password=os.getenv("MONITOR_APP_USER_PASSWORD", "password")
+            )
 
-            # Khởi tạo job cho các service đã có cron
             for service in Service.query.all():
                 if service.cron:
                     add_cron_job(service, app)
-            app.run(
-                host=os.getenv("FLASK_RUN_HOST", "localhost"),
-                port=int(os.getenv("FLASK_RUN_PORT", 5000)),
-                debug=True
-            )
+
+            return True
         else:
             print("Failed to connect to database after 30 attempts")
+            return False
+
+
+if __name__ == "__main__":
+    if init_app():
+        app.run(
+            host=os.getenv("FLASK_RUN_HOST", "localhost"),
+            port=int(os.getenv("FLASK_RUN_PORT", 5000)),
+            debug=True
+        )

@@ -103,7 +103,7 @@ def add_cron_job(service, app):
     if not service.cron:
         return
 
-    job_id = f"service_{service.id}"
+    job_id = f"service_{service.id}:{service.name}:{service.method.value}:{service.url}"
     if scheduler.get_job(job_id):
         print(f"REMOVE {job_id}")
         scheduler.remove_job(job_id)
