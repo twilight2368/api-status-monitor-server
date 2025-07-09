@@ -105,6 +105,7 @@ def add_cron_job(service, app):
 
     job_id = f"service_{service.id}"
     if scheduler.get_job(job_id):
+        print(f"REMOVE {job_id}")
         scheduler.remove_job(job_id)
 
     cron_parts = service.cron.strip().split()
@@ -125,5 +126,6 @@ def add_cron_job(service, app):
             id=job_id,
             replace_existing=True
         )
+        print(f"Add job successful {job_id}")
     except Exception as e:
         print(f"[ERROR] Failed to add cron for service ID {service.id}: {e}")

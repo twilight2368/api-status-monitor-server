@@ -13,7 +13,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path='')
-CORS(app)
+CORS(app, supports_credentials=True, origins=[
+     os.getenv("APP_ORIGIN", "http://localhost:3000")])
 
 load_dotenv()
 
@@ -21,11 +22,11 @@ SQLALCHEMY_DATABASE_URI = (
     f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
     f"@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4"
 )
-
+APP_ENV = os.getenv("APP_ENV", "development")
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key")
+app.config['SESSION_COOKIE_SECURE'] = (APP_ENV == "production")
 
 db.init_app(app)
 
