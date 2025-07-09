@@ -1,24 +1,20 @@
+from functools import wraps
 from dotenv import load_dotenv
 import os
-from flask import Flask, request, jsonify, render_template, send_from_directory
-from flask_sqlalchemy import SQLAlchemy
-from models import db, Service, StatusService, ServiceStatus, HttpMethod
-from sqlalchemy import Enum as PgEnum
+from flask import Flask, request, jsonify,  send_from_directory, session
+from models import db, Service, StatusService,  HttpMethod, User
 from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
-from datetime import datetime
 from flask_cors import CORS
-import enum
-import json
-import requests
 import time
-
+from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path='')
-CORS(app)
+CORS(app, supports_credentials=True, origins=[
+     os.getenv("APP_ORIGIN", "http://localhost:3000")])
 
 load_dotenv()
 
@@ -26,11 +22,24 @@ SQLALCHEMY_DATABASE_URI = (
     f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
     f"@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4"
 )
-
+APP_ENV = os.getenv("APP_ENV", "development")
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = os.getenv("SECRET_KEY", "super-secret-key")
+app.config['SESSION_COOKIE_SECURE'] = (APP_ENV == "production")
 
 db.init_app(app)
+
+# TODO: Check login user
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Not logged in'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 @app.route("/")
@@ -48,10 +57,49 @@ def static_proxy(path):
     # fallback to index.html for client-side routing
     return send_from_directory(app.static_folder, "index.html")
 
+# TODO: auth route
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+
+    if not data or not data.get('username') or not data.get('password'):
+        return jsonify({'error': 'Missing username or password'}), 400
+
+    user = User.query.filter_by(username=data['username']).first()
+
+    if user and check_password_hash(user.password_hash, data['password']):
+        session['user_id'] = user.id
+        return jsonify({'message': 'Login successful', 'user_id': user.id}), 200
+    else:
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('user_id', None)
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+
+@app.route('/api/profile')
+@login_required
+def get_me():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    return jsonify({'username': user.username, "message": "User logged in", "login": True})
+
 # API: Lấy danh sách dịch vụ
 
 
 @app.route("/api/services", methods=["GET"])
+@login_required
 def get_services():
     services = Service.query.all()
     result = []
@@ -72,6 +120,7 @@ def get_services():
 
 
 @app.route("/api/services", methods=["POST"])
+@login_required
 def add_service():
     data = request.json
     new_service = Service(
@@ -96,6 +145,7 @@ def add_service():
 
 
 @app.route("/api/services/<int:service_id>", methods=["PUT"])
+@login_required
 def update_service(service_id):
     service = Service.query.get_or_404(service_id)
     data = request.json
@@ -125,6 +175,7 @@ def update_service(service_id):
 
 
 @app.route("/api/services/<int:service_id>", methods=["DELETE"])
+@login_required
 def delete_service(service_id):
     service = Service.query.get_or_404(service_id)
 
@@ -145,6 +196,7 @@ def delete_service(service_id):
 
 
 @app.route("/api/services/<int:service_id>/check", methods=["GET"])
+@login_required
 def check_service(service_id):
     service = Service.query.get_or_404(service_id)
 
@@ -161,6 +213,7 @@ def check_service(service_id):
 
 
 @app.route("/api/services/<int:service_id>/status", methods=["GET"])
+@login_required
 def get_service_status(service_id):
     status = StatusService.query.filter_by(id_service=service_id).first()
     if not status:
@@ -175,6 +228,7 @@ def get_service_status(service_id):
 
 
 @app.route("/api/services/<int:service_id>/statuses", methods=["GET"])
+@login_required
 def get_service_statuses(service_id):
     statuses = (
         StatusService.query
@@ -201,6 +255,9 @@ def get_service_statuses(service_id):
     ])
 
 
+# TODO :Check for db
+
+
 def wait_for_db():
     """Wait for database to be ready"""
     max_retries = 30
@@ -215,6 +272,23 @@ def wait_for_db():
             time.sleep(2)
     return False
 
+# TODO: Create 1 user only
+
+
+def create_user(username="admin", password="password"):
+    with app.app_context():
+        # Delete all existing users
+        User.query.delete()
+        db.session.commit()
+
+        # Insert new user
+        password_hash = generate_password_hash(password)
+        user = User(username=username, password_hash=password_hash)
+
+        db.session.add(user)
+        db.session.commit()
+        print(f"User '{username}' created successfully.")
+
 
 if __name__ == "__main__":
     with app.app_context():
@@ -223,6 +297,10 @@ if __name__ == "__main__":
             db.create_all()
             print("Tables created.")
             scheduler.start()
+
+            create_user(username=os.getenv("MONITOR_APP_USER", "admin"),
+                        password=os.getenv("MONITOR_APP_USER_PASSWORD", "password"))
+
             # Khởi tạo job cho các service đã có cron
             for service in Service.query.all():
                 if service.cron:

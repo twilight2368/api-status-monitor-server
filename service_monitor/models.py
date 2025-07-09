@@ -57,3 +57,7 @@ class StatusService(db.Model):
     finish_time = db.Column(db.DateTime, nullable=False)
 
 
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(255), nullable=False, unique=True)
+    password_hash = db.Column(db.String(512), nullable=False)
