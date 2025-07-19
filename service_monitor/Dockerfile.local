@@ -13,12 +13,12 @@ RUN pip install --no-cache-dir gunicorn
 COPY . .
 
 # Make entrypoint script executable
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 5000
 
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # 'server' is your entrypoint file; 'app' is the Flask instance inside it (imported from app package)
 # CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "server:app"]
