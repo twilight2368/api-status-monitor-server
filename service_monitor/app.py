@@ -8,6 +8,7 @@ from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_migrate import upgrade, init,  Migrate
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
@@ -29,6 +30,8 @@ app.secret_key = os.getenv("SECRET_KEY", "super-secret-key")
 app.config['SESSION_COOKIE_SECURE'] = (APP_ENV == "production")
 
 db.init_app(app)
+migrate = Migrate(app, db)
+migrate.init_app(app, db)
 
 # TODO: Check login user
 
@@ -295,9 +298,11 @@ def create_user(username="admin", password="password"):
 def init_app():
     with app.app_context():
         if wait_for_db():
-            print("Creating tables...")
-            db.create_all()
-            print("Tables created.")
+
+            if APP_ENV == "development":
+                print("Creating tables...")
+                db.create_all()
+                print("Tables created.")
 
             scheduler.start()
 

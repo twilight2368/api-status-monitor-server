@@ -4,3 +4,4 @@
 .env.production*
 .venv
 dist
+migrations
