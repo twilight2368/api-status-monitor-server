@@ -34,7 +34,7 @@ def check_service_job(service_id, app):
             request_kwargs = {
                 "url": service.url,
                 "cookies": service.cookie or {},
-                "timeout": 5
+                "timeout": service.timeout or 5
             }
 
             if method == HttpMethod.POST:

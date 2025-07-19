@@ -34,6 +34,7 @@ class Service(db.Model):
     data = db.Column(db.JSON, nullable=True)
     cookie = db.Column(db.JSON, nullable=True)
     cron = db.Column(db.String(20), nullable=True)
+    timeout = db.Column(db.Integer, default=5)
     # Quan hệ đến StatusService
     statuses = db.relationship(
         'StatusService',
