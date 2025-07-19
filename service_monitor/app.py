@@ -156,6 +156,7 @@ def update_service(service_id):
     service.method = HttpMethod[data["method"].upper()]
     service.data = data.get("data", {})
     service.cookie = data.get("cookies", {})
+    service.timeout = data.get("timeout")
     service.cron = data.get("schedule_time")
 
     db.session.commit()
