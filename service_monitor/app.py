@@ -2,7 +2,7 @@ from functools import wraps
 from dotenv import load_dotenv
 import os
 from flask import Flask, request, jsonify,  send_from_directory, session
-from models import db, Service, StatusService,  HttpMethod, User
+from models import db, Service, StatusService,  HttpMethod, User, CategoryService
 from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
@@ -104,9 +104,19 @@ def get_me():
 @app.route("/api/services", methods=["GET"])
 @login_required
 def get_services():
-    services = Service.query.all()
+
+    category_param = request.args.get("category")  # Lấy ?category=
+    query = Service.query
+
+    # Nếu có category, join với CategoryService và filter
+    if category_param:
+        query = query.join(CategoryService).filter(CategoryService.category == category_param)
+
+    services = query.all()
+
     result = []
     for s in services:
+        category = CategoryService.query.filter_by(id_service=s.id).first()
         result.append({
             "id": s.id,
             "name": s.name,
@@ -115,7 +125,8 @@ def get_services():
             "data": s.data,
             "cookies": s.cookie,
             "timeout": s.timeout,
-            "cron": s.cron
+            "cron": s.cron,
+            "category": category.category if category else None
         })
     return jsonify(result)
 
@@ -137,6 +148,17 @@ def add_service():
     )
     db.session.add(new_service)
     db.session.commit()
+
+
+    # Thêm category cho service
+    if "category" in data:
+        new_category = CategoryService(
+            id_service=new_service.id,
+            category=data["category"]
+        )
+        db.session.add(new_category)
+        db.session.commit()
+
     # Gọi luôn cronjob sau khi thêm nếu có cron
     if new_service.cron:
         add_cron_job(new_service, app)
@@ -161,6 +183,20 @@ def update_service(service_id):
     service.cookie = data.get("cookies", {})
     service.timeout = data.get("timeout")
     service.cron = data.get("schedule_time")
+
+
+    # Xử lý category
+    category = CategoryService.query.filter_by(id_service=service.id).first()
+    if category:
+        if "category" in data:
+            category.category = data["category"]
+    else:
+        if "category" in data:
+            new_cat = CategoryService(
+                id_service=service.id,
+                category=data["category"]
+            )
+            db.session.add(new_cat)
 
     db.session.commit()
 
@@ -224,11 +260,15 @@ def get_service_status(service_id):
     if not status:
         return jsonify({"message": "Không có dữ liệu status"}), 404
 
+    # Lấy category nếu có
+    category = CategoryService.query.filter_by(id_service=service_id).first()
+
     return jsonify({
         "id_service": status.id_service,
         "name": status.name,
         "status": status.status.value,
-        "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S")
+        "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "category": category.category if category else None
     })
 
 
@@ -245,7 +285,8 @@ def get_service_statuses(service_id):
 
     if not statuses:
         return jsonify({"message": "Không có dữ liệu status"}), 404
-
+    # Lấy category nếu có
+    category = CategoryService.query.filter_by(id_service=service_id).first()
     # Reverse to make finish_time ascending (oldest → newest)
     statuses = list(reversed(statuses))
 
@@ -255,7 +296,8 @@ def get_service_statuses(service_id):
             "id_service": status.id_service,
             "name": status.name,
             "status": status.status.value,
-            "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S")
+            "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "category": category.category if category else None
         } for status in statuses
     ])
 

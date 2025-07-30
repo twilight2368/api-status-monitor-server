@@ -5,7 +5,7 @@ from flask import current_app
 from datetime import datetime
 import requests
 import os
-from models import db, Service, StatusService, ServiceStatus, HttpMethod
+from models import db, Service, StatusService, ServiceStatus, HttpMethod, CategoryService
 
 scheduler = BackgroundScheduler()
 DISCORD_WEBHOOK_URL = f"{os.getenv('DISCORD_WEBHOOK')}"
@@ -22,6 +22,8 @@ def send_discord_alert(service_name, service_url, error_msg):
 def check_service_job(service_id, app):
     with app.app_context():
         service = Service.query.get(service_id)
+        category_obj = CategoryService.query.filter_by(id_service=service_id).first()
+        category = category_obj.category if category_obj else None
         if not service:
             return None
 
@@ -75,6 +77,7 @@ def check_service_job(service_id, app):
                 "name": service.name,
                 "status": status.value,
                 "status_code": response.status_code,
+                "category": category,
                 "response_time": round((finish_time - start).total_seconds() * 1000),
                 "error": None if status == ServiceStatus.UP else f"HTTP {response.status_code}"
             }
@@ -95,6 +98,7 @@ def check_service_job(service_id, app):
             return {
                 "name": service.name,
                 "status": "DOWN",
+                "category": category,
                 "error": str(e)
             }
 

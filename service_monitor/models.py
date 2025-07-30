@@ -62,3 +62,19 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255), nullable=False, unique=True)
     password_hash = db.Column(db.String(512), nullable=False)
+
+# Bảng CategoryService (liên kết với Service qua id_service)
+class CategoryService(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    id_service = db.Column(
+        db.Integer,
+        db.ForeignKey('service.id', ondelete='CASCADE'),
+        nullable=True
+    )
+    category = db.Column(db.String(100), nullable=False)
+
+    # Quan hệ ngược – thêm cascade và passive_deletes
+    service = db.relationship(
+        'Service',
+        backref=db.backref('categories', cascade='all, delete-orphan', passive_deletes=True)
+    )
