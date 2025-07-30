@@ -2,7 +2,7 @@ from functools import wraps
 from dotenv import load_dotenv
 import os
 from flask import Flask, request, jsonify,  send_from_directory, session
-from models import db, Service, StatusService,  HttpMethod, User, CategoryService
+from models import db, Service, StatusService,  HttpMethod, User, Category
 from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
@@ -98,6 +98,42 @@ def get_me():
 
     return jsonify({'username': user.username, "message": "User logged in", "login": True})
 
+
+# ==== CATEGORY CRUD ====
+
+# API: Lấy danh sách category
+@app.route("/api/categories", methods=["GET"])
+def get_categories():
+    categories = Category.query.all()
+    return jsonify([{"id": c.id, "name": c.name} for c in categories])
+
+# API: Thêm category
+@app.route("/api/categories", methods=["POST"])
+def add_category():
+    data = request.json
+    new_cat = Category(name=data["name"])
+    db.session.add(new_cat)
+    db.session.commit()
+    return jsonify({"message": "Category added", "id": new_cat.id}), 201
+
+# API: Sửa category
+@app.route("/api/categories/<int:cat_id>", methods=["PUT"])
+def update_category(cat_id):
+    category = Category.query.get_or_404(cat_id)
+    data = request.json
+    category.name = data["name"]
+    db.session.commit()
+    return jsonify({"message": "Category updated"})
+
+# API: Xoá category (xoá luôn các service liên quan nếu cần)
+@app.route("/api/categories/<int:cat_id>", methods=["DELETE"])
+def delete_category(cat_id):
+    category = Category.query.get_or_404(cat_id)
+    db.session.delete(category)
+    db.session.commit()
+    return jsonify({"message": "Category deleted"})
+
+
 # API: Lấy danh sách dịch vụ
 
 
@@ -105,18 +141,16 @@ def get_me():
 @login_required
 def get_services():
 
-    category_param = request.args.get("category")  # Lấy ?category=
+    category_id = request.args.get("category_id")
     query = Service.query
 
     # Nếu có category, join với CategoryService và filter
-    if category_param:
-        query = query.join(CategoryService).filter(CategoryService.category == category_param)
+    if category_id:
+        query = query.filter_by(category_id=category_id)
 
     services = query.all()
-
     result = []
     for s in services:
-        category = CategoryService.query.filter_by(id_service=s.id).first()
         result.append({
             "id": s.id,
             "name": s.name,
@@ -126,7 +160,7 @@ def get_services():
             "cookies": s.cookie,
             "timeout": s.timeout,
             "cron": s.cron,
-            "category": category.category if category else None
+            "category": s.category.name if s.category else None
         })
     return jsonify(result)
 
@@ -140,6 +174,7 @@ def add_service():
     new_service = Service(
         name=data["name"],
         url=data["url"],
+        category_id=data.get("category_id"),
         method=HttpMethod[data["method"].upper()],
         data=data.get("data", {}),
         cookie=data.get("cookies", {}),
@@ -148,16 +183,6 @@ def add_service():
     )
     db.session.add(new_service)
     db.session.commit()
-
-
-    # Thêm category cho service
-    if "category" in data:
-        new_category = CategoryService(
-            id_service=new_service.id,
-            category=data["category"]
-        )
-        db.session.add(new_category)
-        db.session.commit()
 
     # Gọi luôn cronjob sau khi thêm nếu có cron
     if new_service.cron:
@@ -178,25 +203,12 @@ def update_service(service_id):
 
     service.name = data["name"]
     service.url = data["url"]
+    service.category_id = data.get("category_id")
     service.method = HttpMethod[data["method"].upper()]
     service.data = data.get("data", {})
     service.cookie = data.get("cookies", {})
     service.timeout = data.get("timeout")
     service.cron = data.get("schedule_time")
-
-
-    # Xử lý category
-    category = CategoryService.query.filter_by(id_service=service.id).first()
-    if category:
-        if "category" in data:
-            category.category = data["category"]
-    else:
-        if "category" in data:
-            new_cat = CategoryService(
-                id_service=service.id,
-                category=data["category"]
-            )
-            db.session.add(new_cat)
 
     db.session.commit()
 
@@ -256,25 +268,24 @@ def check_service(service_id):
 @app.route("/api/services/<int:service_id>/status", methods=["GET"])
 @login_required
 def get_service_status(service_id):
-    status = StatusService.query.filter_by(id_service=service_id).first()
+    service = Service.query.get_or_404(id)
+    status = StatusService.query.filter_by(id_service=id).order_by(StatusService.finish_time.desc()).first()
     if not status:
         return jsonify({"message": "Không có dữ liệu status"}), 404
-
-    # Lấy category nếu có
-    category = CategoryService.query.filter_by(id_service=service_id).first()
 
     return jsonify({
         "id_service": status.id_service,
         "name": status.name,
+        'category': service.category.name if service.category else None,
         "status": status.status.value,
         "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "category": category.category if category else None
     })
 
 
 @app.route("/api/services/<int:service_id>/statuses", methods=["GET"])
 @login_required
 def get_service_statuses(service_id):
+    service = Service.query.get_or_404(id)
     statuses = (
         StatusService.query
         .filter_by(id_service=service_id)
@@ -285,8 +296,6 @@ def get_service_statuses(service_id):
 
     if not statuses:
         return jsonify({"message": "Không có dữ liệu status"}), 404
-    # Lấy category nếu có
-    category = CategoryService.query.filter_by(id_service=service_id).first()
     # Reverse to make finish_time ascending (oldest → newest)
     statuses = list(reversed(statuses))
 
@@ -295,9 +304,9 @@ def get_service_statuses(service_id):
             "id": status.id,
             "id_service": status.id_service,
             "name": status.name,
+            'category': service.category.name if service.category else None,
             "status": status.status.value,
             "finish_time": status.finish_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "category": category.category if category else None
         } for status in statuses
     ])
 

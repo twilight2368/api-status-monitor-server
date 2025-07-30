@@ -5,14 +5,17 @@ from flask import current_app
 from datetime import datetime
 import requests
 import os
-from models import db, Service, StatusService, ServiceStatus, HttpMethod, CategoryService
+from models import db, Service, StatusService, ServiceStatus, HttpMethod, Category
 
 scheduler = BackgroundScheduler()
 DISCORD_WEBHOOK_URL = f"{os.getenv('DISCORD_WEBHOOK')}"
 
 
-def send_discord_alert(service_name, service_url, error_msg):
-    content = f"❗ Dịch vụ **{service_name}** đang **DOWN**.\n🔗 URL: {service_url}\n📛 Lỗi: `{error_msg}`"
+def send_discord_alert(service_name, service_url, error_msg, category_name=None):
+    if category_name:
+        content = f"❗ **Dịch vụ đang DOWN**\n > **Category: ** {category_name} \n > **Dịch vụ: **{service_name}\n > **Trạng thái: **DOWN.\n > **URL: ** {service_url}\n > **Lỗi: ** `{error_msg}`"
+    else:
+        content = f"❗ **Dịch vụ đang DOWN**\n > **Dịch vụ: **{service_name}\n > **Trạng thái: **DOWN.\n > **URL: ** {service_url}\n > **Lỗi: ** `{error_msg}`"
     try:
         requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
     except Exception as ex:
@@ -22,10 +25,15 @@ def send_discord_alert(service_name, service_url, error_msg):
 def check_service_job(service_id, app):
     with app.app_context():
         service = Service.query.get(service_id)
-        category_obj = CategoryService.query.filter_by(id_service=service_id).first()
-        category = category_obj.category if category_obj else None
         if not service:
             return None
+        
+        # Lấy thông tin category từ bảng Category thông qua category_id
+        category_name = None
+        if service.category_id:
+            category = Category.query.get(service.category_id)
+            if category:
+                category_name = category.name
 
         try:
             # Set timezone to UTC+7
@@ -56,8 +64,7 @@ def check_service_job(service_id, app):
             # Determine service status
             if 400 <= response.status_code < 600:
                 status = ServiceStatus.DOWN
-                send_discord_alert(
-                    service.name, service.url, f"HTTP {response.status_code} - {response.text}")
+                send_discord_alert(service.name, service.url, f"HTTP {response.status_code} - {response.text}", category_name)
             else:
                 status = ServiceStatus.UP
 
@@ -77,7 +84,7 @@ def check_service_job(service_id, app):
                 "name": service.name,
                 "status": status.value,
                 "status_code": response.status_code,
-                "category": category,
+                "category": category_name,
                 "response_time": round((finish_time - start).total_seconds() * 1000),
                 "error": None if status == ServiceStatus.UP else f"HTTP {response.status_code}"
             }
@@ -94,11 +101,11 @@ def check_service_job(service_id, app):
             db.session.add(status_entry)
             db.session.commit()
 
-            send_discord_alert(service.name, service.url, str(e))
+            send_discord_alert(service.name, service.url, str(e), category_name)
             return {
                 "name": service.name,
                 "status": "DOWN",
-                "category": category,
+                "category": category_name,
                 "error": str(e)
             }
 
