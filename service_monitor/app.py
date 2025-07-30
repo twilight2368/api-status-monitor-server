@@ -9,7 +9,7 @@ from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_migrate import upgrade, init,  Migrate
+from flask_migrate import Migrate
 from cron_helper import send_discord_alert
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -105,12 +105,16 @@ def get_me():
 
 # API: Lấy danh sách category
 @app.route("/api/categories", methods=["GET"])
+@login_required
 def get_categories():
     categories = Category.query.all()
     return jsonify([{"id": c.id, "name": c.name} for c in categories])
 
 # API: Thêm category
+
+
 @app.route("/api/categories", methods=["POST"])
+@login_required
 def add_category():
     data = request.json
     new_cat = Category(name=data["name"])
@@ -119,7 +123,10 @@ def add_category():
     return jsonify({"message": "Category added", "id": new_cat.id}), 201
 
 # API: Sửa category
+
+
 @app.route("/api/categories/<int:cat_id>", methods=["PUT"])
+@login_required
 def update_category(cat_id):
     category = Category.query.get_or_404(cat_id)
     data = request.json
@@ -128,7 +135,10 @@ def update_category(cat_id):
     return jsonify({"message": "Category updated"})
 
 # API: Xoá category (xoá luôn các service liên quan nếu cần)
+
+
 @app.route("/api/categories/<int:cat_id>", methods=["DELETE"])
+@login_required
 def delete_category(cat_id):
     category = Category.query.get_or_404(cat_id)
     db.session.delete(category)
@@ -189,8 +199,7 @@ def add_service():
     # Gọi luôn cronjob sau khi thêm nếu có cron
     if new_service.cron:
         add_cron_job(new_service, app)
-
-    check_service_job(new_service.id, app=app)
+        check_service_job(new_service.id, app=app)
 
     return jsonify({"message": "Dịch vụ đã được thêm"}), 201
 
@@ -270,8 +279,10 @@ def check_service(service_id):
 @app.route("/api/services/<int:service_id>/status", methods=["GET"])
 @login_required
 def get_service_status(service_id):
-    service = Service.query.get_or_404(id)
-    status = StatusService.query.filter_by(id_service=id).order_by(StatusService.finish_time.desc()).first()
+    print(service_id)
+    service = Service.query.get_or_404(service_id)
+    status = StatusService.query.filter_by(id_service=service_id).order_by(
+        StatusService.finish_time.desc()).first()
     if not status:
         return jsonify({"message": "Không có dữ liệu status"}), 404
 
@@ -287,7 +298,7 @@ def get_service_status(service_id):
 @app.route("/api/services/<int:service_id>/statuses", methods=["GET"])
 @login_required
 def get_service_statuses(service_id):
-    service = Service.query.get_or_404(id)
+    service = Service.query.get_or_404(service_id)
     statuses = (
         StatusService.query
         .filter_by(id_service=service_id)
@@ -297,7 +308,11 @@ def get_service_statuses(service_id):
     )
 
     if not statuses:
-        return jsonify({"message": "Không có dữ liệu status"}), 404
+        if service.cron:
+            return jsonify({"message": "Không có dữ liệu status"}), 404
+        else:
+            return jsonify([])
+
     # Reverse to make finish_time ascending (oldest → newest)
     statuses = list(reversed(statuses))
 
@@ -373,31 +388,33 @@ def init_app():
             print("Failed to connect to database after 30 attempts")
             return False
 
-# API webhook 
+# API webhook
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook_handler():
     try:
         data = request.json
-        
+
         # Validate input
         if not data or 'service_id' not in data or 'status' not in data:
             return jsonify({"error": "Missing required fields: service_id and status"}), 400
-        
+
         service_id = data['service_id']
         status = data['status'].upper()  # Chuyển thành chữ hoa
-        
+
         # Kiểm tra service có tồn tại không
         service = Service.query.get(service_id)
         if not service:
             return jsonify({"error": f"Service with id {service_id} not found"}), 404
-        
+
         # Validate status
         if status not in ['UP', 'DOWN']:
             return jsonify({"error": "Invalid status. Must be 'UP' or 'DOWN'"}), 400
-        
+
         # Lấy thông tin category nếu có
         category_name = service.category.name if service.category else None
-        
+
         # Tạo bản ghi status mới
         status_entry = StatusService(
             id_service=service.id,
@@ -405,19 +422,19 @@ def webhook_handler():
             status=ServiceStatus[status],  # Sử dụng enum ServiceStatus
             finish_time=datetime.now()
         )
-        
+
         db.session.add(status_entry)
         db.session.commit()
-        
+
         # Gửi thông báo Discord nếu status là DOWN
         if status == 'DOWN':
             send_discord_alert(
-                service.name, 
-                service.url, 
+                service.name,
+                service.url,
                 "Service reported DOWN via webhook",
                 category_name
             )
-        
+
         return jsonify({
             "message": "Status updated successfully",
             "service_id": service.id,
@@ -426,11 +443,11 @@ def webhook_handler():
             "timestamp": status_entry.finish_time.isoformat(),
             "category": category_name
         }), 200
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
 
 if __name__ == "__main__":
     if init_app():
