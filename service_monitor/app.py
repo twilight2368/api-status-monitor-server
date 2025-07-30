@@ -1,14 +1,16 @@
 from functools import wraps
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 from flask import Flask, request, jsonify,  send_from_directory, session
-from models import db, Service, StatusService,  HttpMethod, User, Category
+from models import db, Service, StatusService,  HttpMethod, User, Category, ServiceStatus
 from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_migrate import upgrade, init,  Migrate
+from cron_helper import send_discord_alert
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
@@ -371,6 +373,64 @@ def init_app():
             print("Failed to connect to database after 30 attempts")
             return False
 
+# API webhook 
+@app.route("/webhook", methods=["POST"])
+def webhook_handler():
+    try:
+        data = request.json
+        
+        # Validate input
+        if not data or 'service_id' not in data or 'status' not in data:
+            return jsonify({"error": "Missing required fields: service_id and status"}), 400
+        
+        service_id = data['service_id']
+        status = data['status'].upper()  # Chuyển thành chữ hoa
+        
+        # Kiểm tra service có tồn tại không
+        service = Service.query.get(service_id)
+        if not service:
+            return jsonify({"error": f"Service with id {service_id} not found"}), 404
+        
+        # Validate status
+        if status not in ['UP', 'DOWN']:
+            return jsonify({"error": "Invalid status. Must be 'UP' or 'DOWN'"}), 400
+        
+        # Lấy thông tin category nếu có
+        category_name = service.category.name if service.category else None
+        
+        # Tạo bản ghi status mới
+        status_entry = StatusService(
+            id_service=service.id,
+            name=service.name,
+            status=ServiceStatus[status],  # Sử dụng enum ServiceStatus
+            finish_time=datetime.now()
+        )
+        
+        db.session.add(status_entry)
+        db.session.commit()
+        
+        # Gửi thông báo Discord nếu status là DOWN
+        if status == 'DOWN':
+            send_discord_alert(
+                service.name, 
+                service.url, 
+                "Service reported DOWN via webhook",
+                category_name
+            )
+        
+        return jsonify({
+            "message": "Status updated successfully",
+            "service_id": service.id,
+            "service_name": service.name,
+            "status": status,
+            "timestamp": status_entry.finish_time.isoformat(),
+            "category": category_name
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
 
 if __name__ == "__main__":
     if init_app():
