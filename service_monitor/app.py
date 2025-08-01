@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import os
 from flask import Flask, request, jsonify,  send_from_directory, session
-from models import db, Service, StatusService,  HttpMethod, User, Category, ServiceStatus
+from models import db, Service, StatusService,  HttpMethod, User, Category, ServiceStatus, APIKey
 from sqlalchemy import text
 from cron_helper import check_service_job, add_cron_job, scheduler
 from flask_cors import CORS
@@ -11,6 +11,7 @@ import time
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_migrate import Migrate
 from cron_helper import send_discord_alert
+from jwtUtils import encode_jwt, verify_jwt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
@@ -30,7 +31,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key")
 app.config['SESSION_COOKIE_SECURE'] = (APP_ENV == "production")
-
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 db.init_app(app)
 migrate = Migrate(app, db)
 migrate.init_app(app, db)
@@ -327,6 +328,143 @@ def get_service_statuses(service_id):
         } for status in statuses
     ])
 
+# API webhook
+
+
+def jwt_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", None)
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Authorization header missing or invalid"}), 401
+
+        token = auth_header.split(" ")[1]
+        result = verify_jwt(token, SECRET_KEY)
+
+        if not result["valid"]:
+            return jsonify({"error": result.get("error", "Invalid token")}), 401
+
+        # You can access payload using g or pass it to the function via kwargs
+        request.jwt_payload = result["payload"]
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route("/webhook", methods=["POST"])
+@jwt_required
+def webhook_handler():
+    try:
+        data = request.json
+
+        # Validate input
+        if not data or 'service_id' not in data or 'status' not in data:
+            return jsonify({"error": "Missing required fields: service_id and status"}), 400
+
+        service_id = data['service_id']
+        status = data['status'].upper()  # Chuyển thành chữ hoa
+
+        # Kiểm tra service có tồn tại không
+        service = db.session.get(Service, service_id)
+        if not service:
+            return jsonify({"error": f"Service with id {service_id} not found"}), 404
+
+        # Validate status
+        if status not in ['UP', 'DOWN']:
+            return jsonify({"error": "Invalid status. Must be 'UP' or 'DOWN'"}), 400
+
+        # Lấy thông tin category nếu có
+        category_name = service.category.name if service.category else None
+
+        # Tạo bản ghi status mới
+        status_entry = StatusService(
+            id_service=service.id,
+            name=service.name,
+            status=ServiceStatus[status],  # Sử dụng enum ServiceStatus
+            finish_time=datetime.now()
+        )
+
+        db.session.add(status_entry)
+        db.session.commit()
+
+        # Gửi thông báo Discord nếu status là DOWN
+        if status == 'DOWN':
+            send_discord_alert(
+                service.name,
+                service.url,
+                "Service reported DOWN via webhook",
+                category_name
+            )
+
+        return jsonify({
+            "message": "Status updated successfully",
+            "service_id": service.id,
+            "service_name": service.name,
+            "status": status,
+            "timestamp": status_entry.finish_time.isoformat(),
+            "category": category_name
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# API key with JWT
+
+
+@app.route("/api/api-key", methods=["GET"])
+@login_required
+def get_api_keys():
+    api_keys = APIKey.query.all()
+    result = []
+    for key in api_keys:
+        result.append({
+            "id": key.id,
+            "name": key.name,
+            "create_time": key.create_time,
+        })
+    return jsonify(result), 200
+
+
+# CREATE (Generate a new API key)
+@app.route("/api/api-key", methods=["POST"])
+@login_required
+def create_api_key():
+    data = request.get_json()
+    name = data.get("name")
+
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+
+    # Prevent duplicates
+    if APIKey.query.filter_by(name=name).first():
+        return jsonify({"error": "API key with that name already exists"}), 409
+
+    token = encode_jwt(name, SECRET_KEY)
+    new_key = APIKey(name=name, key=token, create_time=datetime.now())
+    db.session.add(new_key)
+    db.session.commit()
+
+    return jsonify({
+        "message": "API key created",
+        "id": new_key.id,
+        "name": name,
+        "key": token
+    }), 201
+
+# DELETE (Remove an API key by ID)
+
+
+@app.route("/api/api-key/<int:key_id>", methods=["DELETE"])
+@login_required
+def delete_api_key(key_id):
+    key = APIKey.query.get(key_id)
+    if not key:
+        return jsonify({"error": "API key not found"}), 404
+
+    db.session.delete(key)
+    db.session.commit()
+
+    return jsonify({"message": f"API key with id {key_id} deleted"}), 200
 
 # TODO :Check for db
 
@@ -387,66 +525,6 @@ def init_app():
         else:
             print("Failed to connect to database after 30 attempts")
             return False
-
-# API webhook
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook_handler():
-    try:
-        data = request.json
-
-        # Validate input
-        if not data or 'service_id' not in data or 'status' not in data:
-            return jsonify({"error": "Missing required fields: service_id and status"}), 400
-
-        service_id = data['service_id']
-        status = data['status'].upper()  # Chuyển thành chữ hoa
-
-        # Kiểm tra service có tồn tại không
-        service = Service.query.get(service_id)
-        if not service:
-            return jsonify({"error": f"Service with id {service_id} not found"}), 404
-
-        # Validate status
-        if status not in ['UP', 'DOWN']:
-            return jsonify({"error": "Invalid status. Must be 'UP' or 'DOWN'"}), 400
-
-        # Lấy thông tin category nếu có
-        category_name = service.category.name if service.category else None
-
-        # Tạo bản ghi status mới
-        status_entry = StatusService(
-            id_service=service.id,
-            name=service.name,
-            status=ServiceStatus[status],  # Sử dụng enum ServiceStatus
-            finish_time=datetime.now()
-        )
-
-        db.session.add(status_entry)
-        db.session.commit()
-
-        # Gửi thông báo Discord nếu status là DOWN
-        if status == 'DOWN':
-            send_discord_alert(
-                service.name,
-                service.url,
-                "Service reported DOWN via webhook",
-                category_name
-            )
-
-        return jsonify({
-            "message": "Status updated successfully",
-            "service_id": service.id,
-            "service_name": service.name,
-            "status": status,
-            "timestamp": status_entry.finish_time.isoformat(),
-            "category": category_name
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

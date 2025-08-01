@@ -35,7 +35,8 @@ class Service(db.Model):
     cookie = db.Column(db.JSON, nullable=True)
     cron = db.Column(db.String(20), nullable=True)
     timeout = db.Column(db.Integer, default=5)
-    category_id = db.Column(db.Integer, db.ForeignKey('category.id', ondelete='SET NULL'), nullable=True)
+    category_id = db.Column(db.Integer, db.ForeignKey(
+        'category.id', ondelete='SET NULL'), nullable=True)
     # Quan hệ đến StatusService
     statuses = db.relationship(
         'StatusService',
@@ -65,8 +66,18 @@ class User(db.Model):
     password_hash = db.Column(db.String(512), nullable=False)
 
 # Bảng Category (mỗi category có nhiều service)
+
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
     # Quan hệ 1-n với Service
-    services = db.relationship('Service', backref='category', cascade="all, delete", passive_deletes=True)
+    services = db.relationship(
+        'Service', backref='category', cascade="all, delete", passive_deletes=True)
+
+
+class APIKey(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    key = db.Column(db.String(2000))
+    create_time = db.Column(db.DateTime, nullable=False)
